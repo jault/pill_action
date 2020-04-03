@@ -16,13 +16,11 @@ import numpy as np
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(1, 32, 3, 1)
-        self.conv2 = nn.Conv2d(32, 64, 3, 1)
-        self.dropout1 = nn.Dropout2d(0.25)
-        self.dropout2 = nn.Dropout2d(0.5)
-        self.fc1 = nn.Linear(75, 128)
-        self.fc2 = nn.Linear(128, 256)
-        self.fc3 = nn.Linear(256, 1)
+        self.dropout1 = nn.Dropout2d(0.65)
+        self.fc1 = nn.Linear(750, 512)
+        self.fc2 = nn.Linear(512, 512)
+        self.fc3 = nn.Linear(512, 256)
+        self.fc4 = nn.Linear(256, 1)
 
     def forward(self, x):
         x = self.fc1(x)
@@ -30,8 +28,10 @@ class Net(nn.Module):
         x = self.dropout1(x)
         x = self.fc2(x)
         x = F.relu(x)
-        x = self.dropout2(x)
+        x = self.dropout1(x)
         x = self.fc3(x)
+        x = self.dropout1(x)
+        x = self.fc4(x)
         output = F.sigmoid(x)
         return output
 
@@ -77,13 +77,13 @@ def test(args, model, device, test_loader):
 def main():
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
-    parser.add_argument('--batch-size', type=int, default=64, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=32, metavar='N',
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=14, metavar='N',
+    parser.add_argument('--epochs', type=int, default=60, metavar='N',
                         help='number of epochs to train (default: 14)')
-    parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
+    parser.add_argument('--lr', type=float, default=0.00001, metavar='LR',
                         help='learning rate (default: 1.0)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
@@ -103,17 +103,14 @@ def main():
 
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 
-    dataset = VideoFolder('data')
-    # Split dataset
-    dsize = len(dataset)
-    print(dsize)
-    trainset, valset = torch.utils.data.random_split(dataset, [11946, 2987])
+    trainset = VideoFolder('data')
+    valset = VideoFolder('data', is_validation=True)
 
     train_loader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True, **kwargs)
     val_loader = DataLoader(valset, batch_size=args.batch_size, shuffle=True, **kwargs)
 
     model = Net().to(device)
-    summary(model, (32, 75))
+    summary(model, (32, 750))
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
 
@@ -140,29 +137,33 @@ def main():
 
 def test_video(model, device, video_path):
     predictions = []
+    frames = [[-1] * 75, [-1] * 75, [-1] * 75, [-1] * 75, [-1] * 75,
+              [-1] * 75, [-1] * 75, [-1] * 75, [-1] * 75, [-1] * 75]
     for root, _, fnames in sorted(os.walk(video_path, followlinks=True)):
         for fname in sorted(fnames):
             if '.mp4' not in fname:
                 path = os.path.join(root, fname)
                 with open(path) as f:
+                    frames.pop(0)
                     try:
-                        keypoints = json.load(f)['people'][0]['pose_keypoints_2d']
+                        frames.append(json.load(f)['people'][0]['pose_keypoints_2d'])
                     except:
-                        keypoints = [-1] * 75
-                keypoints = torch.FloatTensor(keypoints).to(device)
+                        frames.append([-1] * 75)
                 model.eval()
-                predictions.append(model(keypoints).cpu().detach().numpy()[0])
+                predictions.append(model(torch.FloatTensor(np.asarray(frames).flatten()).to(device)).cpu().detach().numpy()[0])
 
     predsecs = []
     frames = []
     jsonit = []
     i = 1
+    x = []
     for pred in predictions:
-        if len(frames) != 30:
+        if len(frames) != 15:
             frames.append(pred)
         else:
-            predsecs.append(sum(frames)/30)
-            jsonit.append([i*1.0, sum(frames)/30])
+            x.append(i*0.5)
+            predsecs.append(sum(frames)/15)
+            jsonit.append([i*0.5, sum(frames)/15])
             i += 1
             frames = [pred]
     jsonit = {'pilltaking':jsonit}
@@ -170,7 +171,7 @@ def test_video(model, device, video_path):
     video_json = json.dumps(jsonit)
     print(video_json)
     plt.ylim((0.0, 1.0))
-    plt.plot(predsecs)
+    plt.plot(x, predsecs)
     plt.show()
 
 

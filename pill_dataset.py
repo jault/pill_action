@@ -4,6 +4,7 @@ from PIL import Image
 import cv2
 import json
 import torch
+import numpy as np
 
 import os
 import os.path
@@ -23,21 +24,12 @@ def has_file_allowed_extension(filename, extensions):
     return filename.lower().endswith(extensions)
 
 
-def is_image_file(filename):
-    """Checks if a file is an allowed image extension.
-
-    Args:
-        filename (string): path to a file
-
-    Returns:
-        bool: True if the filename ends with a known image extension
-    """
-    return has_file_allowed_extension(filename, IMG_EXTENSIONS)
-
 
 def make_dataset(dir, class_to_idx, extensions=None, is_valid_file=None):
     videos = {}
-    items = []
+    training = []
+    validation = []
+    class_size = [0] * len(class_to_idx)
     dir = os.path.expanduser(dir)
     for target in sorted(class_to_idx.keys()):
         d = os.path.join(dir, target)
@@ -54,10 +46,15 @@ def make_dataset(dir, class_to_idx, extensions=None, is_valid_file=None):
                     splitted = fname.split('_')
                     vname = splitted[0]
                     frame = int(splitted[1])
-                    item = ([videos[vname], frame, path], class_to_idx[target])
-                    items.append(item)
+                    target_idx = class_to_idx[target]
+                    item = ([videos[vname], frame, path], target_idx)
+                    if class_size[target_idx] < 1500:
+                        validation.append(item)
+                        class_size[target_idx] += 1
+                    else:
+                        training.append(item)
 
-    return items
+    return training, validation
 
 
 class DatasetFolder(VisionDataset):
@@ -93,12 +90,13 @@ class DatasetFolder(VisionDataset):
     """
 
     def __init__(self, root, loader, extensions=None, transform=None,
-                 target_transform=None, is_valid_file=None):
+                 target_transform=None, is_valid_file=None, is_validation=False):
         super(DatasetFolder, self).__init__(root, transform=transform,
                                             target_transform=target_transform)
         classes, class_to_idx = self._find_classes(self.root)
         print(classes, class_to_idx)
-        samples = make_dataset(self.root, class_to_idx, extensions, is_valid_file)
+        samples, validation = make_dataset(self.root, class_to_idx, extensions, is_valid_file)
+        if is_validation: samples = validation
         if len(samples) == 0:
             raise (RuntimeError("Found 0 files in subfolders of: " + self.root + "\n"
                                 "Supported extensions are: " + ",".join(extensions)))
@@ -141,19 +139,27 @@ class DatasetFolder(VisionDataset):
         Returns:
             tuple: (sample, target) where target is class_index of the target class.
         """
-        path, target = self.samples[index]
+        frames = []
+        ind_path, ind_target = self.samples[index]
+        for i in range(10):
+            if index+i >= len(self.samples):
+                frames.append([-1]*75)
+            else:
+                path, target = self.samples[index+i]
+                if ind_target != target:
+                    frames.append([-1]*75)
+                else:
+                    video_path = path[0]
+                    frame_number = path[1]
+                    json_path = path[2]
 
-        video_path = path[0]
-        frame_number = path[1]
-        json_path = path[2]
+                    clip = []
 
-        clip = []
-
-        with open(json_path) as f:
-            try:
-                keypoints = json.load(f)['people'][0]['pose_keypoints_2d']
-            except:
-                keypoints = [-1]*75
+                    with open(json_path) as f:
+                        try:
+                            frames.append(json.load(f)['people'][0]['pose_keypoints_2d'])
+                        except:
+                            frames.append([-1]*75)
 
 
         """cap = cv2.VideoCapture(video_path)
@@ -179,11 +185,11 @@ class DatasetFolder(VisionDataset):
         if self.target_transform is not None:
             target = self.target_transform(target)"""
         #print(len(keypoints))
-
-        return torch.FloatTensor(keypoints), target
+        keypoints = np.asarray(frames).flatten()
+        return torch.FloatTensor(keypoints), ind_target
 
     def __len__(self):
-        return len(self.samples)-30*10
+        return len(self.samples)
 
 
 class VideoFolder(DatasetFolder):
@@ -214,9 +220,9 @@ class VideoFolder(DatasetFolder):
     """
 
     def __init__(self, root, transform=None, target_transform=None,
-                 loader=None, is_valid_file=None):
+                 loader=None, is_valid_file=None, is_validation=False):
         super(VideoFolder, self).__init__(root, loader, None if is_valid_file is None else None,
                                           transform=transform,
                                           target_transform=target_transform,
-                                          is_valid_file=is_valid_file)
+                                          is_valid_file=is_valid_file, is_validation=is_validation)
         self.imgs = self.samples
