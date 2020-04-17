@@ -44,11 +44,15 @@ def make_dataset(dir, class_to_idx, extensions=None, is_valid_file=None):
                     videos[vname] = path
                 else:
                     splitted = fname.split('_')
-                    vname = splitted[0]
-                    frame = int(splitted[1])
+                    if 'not_pill' in fname:
+                        vname = splitted[0]+'_'+splitted[1]
+                        frame = int(splitted[2])
+                    else:
+                        vname = splitted[0]
+                        frame = int(splitted[1])
                     target_idx = class_to_idx[target]
                     item = ([videos[vname], frame, path], target_idx)
-                    if class_size[target_idx] < 1500:
+                    if class_size[target_idx] < 3000:
                         validation.append(item)
                         class_size[target_idx] += 1
                     else:
@@ -139,53 +143,42 @@ class DatasetFolder(VisionDataset):
         Returns:
             tuple: (sample, target) where target is class_index of the target class.
         """
-        frames = []
+        json_frames = []
         ind_path, ind_target = self.samples[index]
         for i in range(10):
             if index+i >= len(self.samples):
-                frames.append([-1]*75)
+                json_frames.append([-1]*75)
             else:
                 path, target = self.samples[index+i]
                 if ind_target != target:
-                    frames.append([-1]*75)
+                    json_frames.append([-1]*75)
                 else:
-                    video_path = path[0]
-                    frame_number = path[1]
                     json_path = path[2]
-
-                    clip = []
 
                     with open(json_path) as f:
                         try:
-                            frames.append(json.load(f)['people'][0]['pose_keypoints_2d'])
+                            json_frames.append(json.load(f)['people'][0]['pose_keypoints_2d'])
                         except:
-                            frames.append([-1]*75)
+                            json_frames.append([-1]*75)
 
-
-        """cap = cv2.VideoCapture(video_path)
+        """video_path = ind_path[0]
+        frame_number = ind_path[1]
+        cap = cv2.VideoCapture(video_path)
         cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number - 1)
-        res, frame = cap.read()
+        frames = []
+        for i in range(10):
+            try:
+                res, frame = cap.read()
+                dim = (int(frame.shape[1] * .1), int(frame.shape[0] * .1))
+                frame = cv2.resize(cv2.cvtColor(frame, 7), dim, interpolation=cv2.INTER_AREA)
+            except:
+                frame = np.zeros_like(frames[-1])
+            frames.append(frame)
         cap.release()
-        # Transform frame image
-        scale_percent = 30  # percent of original size
-        width = int(frame.shape[1] * scale_percent / 100)
-        height = int(frame.shape[0] * scale_percent / 100)
-        dim = (width, height)
-        # resize image
-        frame = cv2.resize(cv2.cvtColor(frame, 7), dim, interpolation=cv2.INTER_AREA)
-        #cv2.imshow("Resized image", frame)
-        #cv2.waitKey(0)
-        #cv2.destroyAllWindows()"""
+        frames = np.stack(frames)"""
 
-        #clip.append((frame, keypoints))
 
-        """sample = self.loader(path)
-        if self.transform is not None:
-            sample = self.transform(sample)
-        if self.target_transform is not None:
-            target = self.target_transform(target)"""
-        #print(len(keypoints))
-        keypoints = np.asarray(frames).flatten()
+        keypoints = np.asarray(json_frames).flatten()
         return torch.FloatTensor(keypoints), ind_target
 
     def __len__(self):
