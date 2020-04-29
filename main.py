@@ -14,29 +14,22 @@ import numpy as np
 from torch.nn import Conv2d, Dropout, MaxPool2d
 
 
-class Net(nn.Module):
+class FullNet(nn.Module):
     def __init__(self):
-        super(Net, self).__init__()
-        self.dropout1 = nn.Dropout2d(0.7)
+        super(FullNet, self).__init__()
+        self.dropout1 = nn.Dropout2d(0.4)
         self.pool = MaxPool2d(kernel_size=2, stride=2)
 
-        self.fc1 = nn.Linear(750, 1024)
-        self.fc2 = nn.Linear(1024, 756)
-        self.fc3 = nn.Linear(756, 512)
-        self.fc4 = nn.Linear(512, 256)
+        self.fc1 = nn.Linear(100, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(64, 32)
+        self.fc4 = nn.Linear(32, 16)
 
-        self.fcv = nn.Linear(2816, 256)
+        self.out = nn.Linear(16, 1)
 
-        self.out = nn.Linear(256, 1)
-
-        self.cv1 = Conv2d(10, 32, kernel_size=5, stride=3)
-        self.cv2 = Conv2d(32, 64, kernel_size=3, stride=1)
-        self.cv3 = Conv2d(64, 64, kernel_size=3, stride=1)
-        self.cv4 = Conv2d(64, 64, kernel_size=3, stride=1)
 
     def forward(self, json):
         x = json
-        #v = video
 
         x = self.fc1(x)
         x = F.relu(x)
@@ -51,20 +44,25 @@ class Net(nn.Module):
         x = F.relu(x)
         x = self.dropout1(x)
 
-        """v = self.pool(F.relu(self.cv1(v)))
-        v = self.pool(F.relu(self.cv2(v)))
-        v = self.pool(F.relu(self.cv3(v)))
-        v = self.pool(F.relu(self.cv4(v)))
-
-        v = v.view(v.size(0), -1)
-        x = torch.cat((x, v), 1)
-
-        x = F.relu(self.fcv(x))
-        x = self.dropout1(x)"""
         x = self.out(x)
 
         output = F.sigmoid(x)
         return output
+
+class RNNet(nn.Module):
+    def __init__(self):
+        super(RNNet, self).__init__()
+
+        self.lstm = nn.LSTM(input_size=50, hidden_size=64, num_layers=3, batch_first=True, dropout=0.8)
+
+        self.out = nn.Linear(64, 1)
+
+
+    def forward(self, json):
+        x, _ = self.lstm(json, None)
+
+        x = F.sigmoid(self.out(x[:, -1, :]))
+        return x
 
 
 def train(args, model, device, train_loader, optimizer, epoch):
@@ -84,6 +82,7 @@ def train(args, model, device, train_loader, optimizer, epoch):
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader), loss.item()))
+    print('Avg train loss:', sum(losses)/len(losses))
     return sum(losses)/len(losses)
 
 
@@ -98,7 +97,7 @@ def test(args, model, device, test_loader):
             target = target.to(device)
             output = model(json)
             test_loss += F.binary_cross_entropy(output, target.float(), reduction='sum').item()  # sum up batch loss
-            pred = output >= 0.5  # get the index of the max log-probability
+            pred = output >= 0.5
             correct += pred.eq(target.view_as(pred)).sum().item()
 
     test_loss /= len(test_loader.dataset)
@@ -116,15 +115,15 @@ def main():
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=60, metavar='N',
+    parser.add_argument('--epochs', type=int, default=30, metavar='N',
                         help='number of epochs to train (default: 14)')
-    parser.add_argument('--lr', type=float, default=0.00001, metavar='LR',
+    parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
                         help='learning rate (default: 1.0)')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
-    parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+    parser.add_argument('--log-interval', type=int, default=100, metavar='N',
                         help='how many batches to wait before logging training status')
 
     parser.add_argument('--save-model', action='store_true', default=True,
@@ -145,8 +144,10 @@ def main():
     train_loader = DataLoader(trainset, batch_size=args.batch_size, shuffle=True, **kwargs)
     val_loader = DataLoader(valset, batch_size=args.batch_size, shuffle=True, **kwargs)
 
-    model = Net().to(device)
-    summary(model, (750,), batch_size=32)
+    #model = FullNet().to(device)
+    #summary(model, (500,), batch_size=32)
+    model = RNNet().to(device)
+    #summary(model, (20,50), batch_size=32)
     optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=1e-4)
 
 
@@ -173,8 +174,18 @@ def main():
 
 def test_video(model, device, video_path):
     predictions = []
-    frames = [[-1] * 75, [-1] * 75, [-1] * 75, [-1] * 75, [-1] * 75,
-              [-1] * 75, [-1] * 75, [-1] * 75, [-1] * 75, [-1] * 75]
+    frames = [[-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50,
+              [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50,
+                [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50,
+              [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50,
+              [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50,
+              [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50,
+              [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50,
+              [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50,
+              [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50,
+              [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50,
+              [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50,
+              [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50, [-1] * 50]
     for root, _, fnames in sorted(os.walk(video_path, followlinks=True)):
         for fname in sorted(fnames):
             if '.mp4' not in fname:
@@ -182,12 +193,24 @@ def test_video(model, device, video_path):
                 with open(path) as f:
                     frames.pop(0)
                     try:
-                        frames.append(json.load(f)['people'][0]['pose_keypoints_2d'])
+                        keys = np.asarray(json.load(f)['people'][0]['pose_keypoints_2d'])
+                        keys = keys.reshape(-1, 3)[:, 0:2].flatten()
+                        frames.append(keys)
                     except:
-                        frames.append([-1] * 75)
+                        frames.append([-1] * 50)
                 model.eval()
-                predictions.append(model(torch.FloatTensor(np.asarray(frames).flatten()).to(device)).cpu().detach().numpy()[0])
 
+                model_inp = []
+                missing_frame = False
+                for i in range(60):
+                    if i !=0 and i%5==0: continue
+                    if -1 in frames[i]: missing_frame = True
+                    model_inp.append(frames[i])
+                if missing_frame:
+                    predictions.append(0)
+                else:
+                    #predictions.append(model(torch.FloatTensor(np.asarray(frames).flatten()).to(device)).cpu().detach().numpy()[0])
+                    predictions.append(model(torch.FloatTensor(np.asarray([model_inp])).to(device)).cpu().detach().numpy()[0][0])
     predsecs = []
     frames = []
     jsonit = []

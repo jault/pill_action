@@ -52,7 +52,7 @@ def make_dataset(dir, class_to_idx, extensions=None, is_valid_file=None):
                         frame = int(splitted[1])
                     target_idx = class_to_idx[target]
                     item = ([videos[vname], frame, path], target_idx)
-                    if class_size[target_idx] < 3000:
+                    if class_size[target_idx] < 5855 and np.random.uniform() < 0.4:
                         validation.append(item)
                         class_size[target_idx] += 1
                     else:
@@ -145,21 +145,25 @@ class DatasetFolder(VisionDataset):
         """
         json_frames = []
         ind_path, ind_target = self.samples[index]
-        for i in range(10):
+        for i in range(20*3):
+            if i != 0 and i%5==0: continue
             if index+i >= len(self.samples):
-                json_frames.append([-1]*75)
+                json_frames.append([-1]*50)
             else:
                 path, target = self.samples[index+i]
                 if ind_target != target:
-                    json_frames.append([-1]*75)
+                    json_frames.append([-1]*50)
                 else:
                     json_path = path[2]
 
                     with open(json_path) as f:
                         try:
-                            json_frames.append(json.load(f)['people'][0]['pose_keypoints_2d'])
+                            keys = np.asarray(json.load(f)['people'][0]['pose_keypoints_2d'])
+                            keys = keys.reshape(-1, 3)[:, 0:2].flatten()
+                            json_frames.append(keys)
                         except:
-                            json_frames.append([-1]*75)
+                            json_frames.append([-1]*50)
+
 
         """video_path = ind_path[0]
         frame_number = ind_path[1]
@@ -176,9 +180,7 @@ class DatasetFolder(VisionDataset):
             frames.append(frame)
         cap.release()
         frames = np.stack(frames)"""
-
-
-        keypoints = np.asarray(json_frames).flatten()
+        keypoints = np.asarray(json_frames)#.flatten()
         return torch.FloatTensor(keypoints), ind_target
 
     def __len__(self):
