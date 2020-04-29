@@ -3,7 +3,7 @@ Install dependencies using pip using the requirements.txt file provided. Downloa
 Run the main.py script with the dataset extracted to the 'data' folder and examples extracted to the 'example' folder. A demo of the code training and then generating the classification graphs on the example videos can be found at:\\ https://www.youtube.com/watch?v=OafryaCyxnE
 
 Execution demo:
-https://www.youtube.com/watch?v=OafryaCyxnE
+https://youtu.be/JIHXB71ej1o
 
 Examples:
 Coat	-	https://www.youtube.com/watch?v=ieNSHIMZGIY
